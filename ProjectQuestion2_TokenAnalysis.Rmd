@@ -1,0 +1,471 @@
+---
+title: "Token Analysis of funfair,kybernetwork & loopring"
+author: "sanjana annamaneni Anjali varier"
+date: "1 May 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+library(dplyr)
+library(magrittr)
+library(ggplot2)
+library(fitdistrplus)
+
+
+setwd("C:/Users/Anjali/Documents/R workspace") #setting the working directory
+ffunprocessed<-read.table('Ethereum token graphs/networkfunfairTX.txt',sep = " ")
+
+#allocating names to each column of the table 
+names(ffunprocessed)<-c('sellersID','buyersID','timestamp','tokenamt')
+
+#preprocessing...
+decimal<- 10^8 # decimal to make it equal
+supply<- 10999873621
+
+
+#total supply of the token
+decimal * supply
+#remove all the outliers that are greater than the token amt
+ffprocessed<-ffunprocessed %>% filter(tokenamt<decimal*supply)
+summary(ffprocessed)
+
+ffprocessed %>% filter(tokenamt < decimal * supply) %>% nrow()
+
+ffunprocessed<-unique(ffunprocessed)
+summary(ffunprocessed)
+ffunprocessed %>% filter(tokenamt >= decimal * supply) %>% nrow()
+ffoutliers<-ffunprocessed %>% filter(tokenamt >= decimal * supply)
+
+summary(ffoutliers)
+ffoutliers %>% filter(tokenamt >= decimal * supply) %>% nrow()
+
+#since the outliers are greater than 30(>30) we have to check whether these outliers are truly outliers that are effecting our data.
+#77 transcations of these outliers had the same buyer id, that is many people sold tokens to the same buyer this buyer could be fake buyers cause he was buying tokens more than the supply and also from various users in near time stamp
+#hence removing these outliers was a good decision
+#to find the unique number of users in the outliers
+num_users<-c(unique(ffoutliers $ sellersID),unique(ffoutliers $ buyersID))
+length(num_users)
+summary(num_users)
+#77 of these outliers had the same buyer id, that is many people sold tokens to the same buyer this buyer could be fake buyers cause he was buying tokens more than the supply and also from various users in near time stamp
+#hence removing these outliers was a good decision
+
+#find out the outliers
+#ffoutliers $ sellersID
+sell<-unique(ffoutliers $ sellersID)
+#sell
+sells_table_out<-as.data.frame(table(sell))
+#sells_table_out
+length(sell)
+buy<-unique(ffoutliers $ buyersID)
+buys_table_out<-as.data.frame(table(buy))
+#buys_table_out
+x<-union(sell,buy)
+#number of users invovled in the outliers
+length(x)
+
+summary(x)
+summary(ffprocessed)
+
+#we can observe that the mean and max values have huge difference thus we took a sample data
+ff_data<-ffprocessed[ffprocessed$tokenamt>quantile(ffprocessed$tokenamt,0.01),]
+ff_data<-ff_data[ff_data$tokenamt<quantile(ff_data$tokenamt,0.99),]
+summary(ff_data)
+
+#we have to know find the distribution followed by the pair of buyers and sellers
+
+df<-ff_data %>% group_by(buyersID,sellersID) %>% summarize(n=n())
+buy_sell_dis<-df %>% arrange(-n)
+buy_sell_dis_10<-df %>% arrange(-n)%>%head(10)
+hist(buy_sell_dis_10$n,breaks=10)
+#we see that the histogram for the top 10 pairs
+#now we want distribution for frequency of fequency of buyers and sellers
+distribution<-as.data.frame(table(buy_sell_dis$n))
+distribution<-distribution%>%arrange(-Freq)
+buys_frequency <-c(distribution[,'Freq'])
+barplot(distribution$Freq,names.arg =distribution $Var1,ylab = "Frequency",xlab = "num_buys_sells", xlim = c(0,60),ylim = c(0,6000))
+#  
+
+
+######Fitting the distribution########
+#we can see that our data is not continous thus we can use normal distriibution first
+
+fit.normal.dis <- fitdist(buys_frequency, 'norm')
+#denscomp(fit.normal.dis)
+plot(fit.normal.dis)
+fit.normal.dis
+
+#we see that the mean is not 0 and the standard deviation is very much greater than one and the plot also doesnt match our data pattern
+#we can a draw a cullen frey graph
+
+descdist(buys_frequency,discrete = TRUE)
+#seems like our data lies in the poisson distribution range 
+#thus lets assume our data follows poissons distribution
+#hence we used fitdist to check our assumtion that it is poisson distribution is true or not
+fit.pois.dis <- fitdist(buys_frequency, 'pois')
+#denscomp(fit.pois.dis)
+plot(fit.pois.dis)
+fit.pois.dis
+#since we get mean and standard deviation #lets check the mean of our distribution
+mean<-mean(buys_frequency)
+mean
+
+# from the above observation we see that the lambda value=mean of the distribution
+# therefore we can conclude that our data follows poisson distribution
+# the plot also resembles the same 
+gofstat(list(fit.pois.dis,fit.normal.dis))
+
+#considering all the factors of lambda=mean , goodness of fit and the plot of graph we can conclude that our data follows poisson distribution
+
+###################Question 2 #######################################
+setwd("C:/Users/Anjali/Documents/R workspace") #setting the working directory
+#Read funfair ethereum token graph
+tempff<-read.csv(file='Ethereum token graphs/networkfunfairTX.txt',header = F,sep=" ")
+#Read funfair token price
+token_price<-read.csv(file='tokenPrices/funfair',header = T,sep = "")
+names(token_price)<-c('date','open','high','low','close','volume','marketcap')
+names(tempff)<-c('sellers','buyers','date','tokenamt')
+
+decimal<- 10^8 # decimal to make it equal
+supply<- 10999873621
+
+
+tt<-decimal*supply
+#find the number of transaction <= decimal * supply
+data1<-subset(tempff,tokenamt<=tt)
+#Remove outliers for more processed data
+data1<-data1[data1$tokenamt>quantile(data1$tokenamt,0.1),]
+data1<-data1[data1$tokenamt<quantile(data1$tokenamt,0.90),]
+data1$date <-as.Date(as.POSIXct(as.numeric(data1$date), origin="1970-01-01"))
+
+summary(data1)
+#substitute / with - for a corrected date format
+token_price$date<-gsub("/","-",token_price$date)
+#format the date data mm-dd-yyyy
+token_price$date<-format(as.Date(token_price$date, format="%m-%d-%Y"), "%Y-%m-%d")
+#format the date data mm-dd-yyyy
+data1$date<-format(as.Date(data1$date, format="%Y-%m-%d"), "%Y-%m-%d")
+
+active_buyers_table<-as.data.frame(data1)
+#get a maximum token amount per day
+trans_max <- aggregate(tokenamt ~ date, data1, max)
+
+temp_data<-merge(trans_max,active_buyers_table)
+tempdata<-unique(temp_data)
+
+top<-as.data.frame(token_price)
+
+top$volume<-gsub(",", "", top$volume, fixed = TRUE) 
+#merging token price table with active buyers table by date
+tp<-merge(top,active_buyers_table,by="date")
+t_p<-as.data.frame(table(tp$buyers))
+#grouping the merged table by date
+tp<-tp%>%group_by(date)
+summary(tp)
+
+#Sorting the volume in descending order to get top amount of volume to find the most active buyers
+order_by_volume<-tp[order(as.numeric(as.character(tp$volume)), decreasing=TRUE) , ]
+#Remove the duplicated volume
+unique_order_by_vol<-subset(order_by_volume,!duplicated(order_by_volume$volume))
+
+#Find the correlation of the whole data to find the best relationship between volume & close
+cor_val_whole_close<-cor(as.numeric(as.character(unique_order_by_vol$volume)),unique_order_by_vol$close)
+cor_val_whole_close
+#Find the correlation of the whole data to find the best relationship between volume & open
+cor_val_whole_open<-cor(as.numeric(as.character(unique_order_by_vol$volume)),unique_order_by_vol$open)
+cor_val_whole_open
+
+
+#getting the top 50 most active buyers
+top_unique_vol<-unique_order_by_vol[1:80,]
+top_unique_vol
+##############Getting most active buyers & sellers from kybernetwork########## 
+ktempff<-read.csv(file='Ethereum token graphs/networkkybernetworkTX.txt',header = F,sep=" ")
+ktoken_price<-read.csv(file='tokenPrices/kybernetwork',header = T,sep = "")
+names(ktoken_price)<-c('date','open','high','low','close','volume','marketcap')
+names(ktempff)<-c('sellers','buyers','date','tokenamt')
+
+
+kdecimal<- 10^18 # decimal to make it equal
+ksupply<- 214956212
+ktt<-kdecimal*ksupply
+#find the number of transaction <= decimal * supply
+kdata1<-subset(ktempff,tokenamt<=ktt)
+#there are only 2 outliers which is negligible
+
+
+kdata1$date <-as.Date(as.POSIXct(as.numeric(kdata1$date), origin="1970-01-01"))
+
+summary(kdata1)
+#substitute / with - for a corrected date format
+ktoken_price$date<-gsub("/","-",ktoken_price$date)
+#format the date in mm-dd-yyyy in token price data
+ktoken_price$date<-format(as.Date(ktoken_price$date, format="%m-%d-%Y"), "%Y-%m-%d")
+summary(ktoken_price)
+#format the date in mm-dd-yyyy in token graph
+kdata1$date<-format(as.Date(kdata1$date, format="%Y-%m-%d"), "%Y-%m-%d")
+
+kyber_active_buyers_table<-as.data.frame(kdata1)
+#get a maximum token amount per day
+kyber_trans_max <- aggregate(tokenamt ~ date, kdata1, max)
+
+kyber_temp_data<-merge(kyber_trans_max,kyber_active_buyers_table)
+
+kyber_tempdata<-unique(kyber_temp_data)
+
+kyber_top<-as.data.frame(ktoken_price)
+kyber_top$volume<-gsub(",", "", kyber_top$volume, fixed = TRUE)
+
+#merging token price table with active buyers table by date
+kyber_tp<-merge(kyber_top,kyber_active_buyers_table,by="date")
+kyber_t_p<-as.data.frame(table(kyber_tp$buyers))
+#grouping the merged table by date
+kyber_tp<-kyber_tp%>%group_by(date)
+summary(kyber_tp)
+
+#Sorting the volume in descending order to get top amount of volume to find the most active buyers
+kyber_order_by_volume<-kyber_tp[order(as.numeric(as.character(kyber_tp$volume)), decreasing=TRUE) , ]
+#Remove the duplicated volume
+kyber_unique_order_by_vol<-subset(kyber_order_by_volume,!duplicated(kyber_order_by_volume$volume))
+
+#Find the correlation of the whole data to find the best relationship between volume & close
+kyber_cor_val_whole_close<-cor(as.numeric(as.character(kyber_unique_order_by_vol$volume)),kyber_unique_order_by_vol$close)
+cor_val_whole_close
+
+#Find the correlation of the whole data to find the best relationship between volume & open
+kyber_cor_val_whole_open<-cor(as.numeric(as.character(kyber_unique_order_by_vol$volume)),kyber_unique_order_by_vol$open)
+cor_val_whole_open
+#getting the top 200 most active buyers
+kyber_top_unique_vol<-kyber_unique_order_by_vol[1:200,]
+kyber_top_unique_vol
+##############Getting most active buyers & sellers from loopring########## 
+ltempff<-read.csv(file='Ethereum token graphs/networkloopringTX.txt',header = F,sep=" ")
+ltoken_price<-read.csv(file='tokenPrices/loopring',header = T,sep = "")
+names(ltoken_price)<-c('date','open','high','low','close','volume','marketcap')
+names(ltempff)<-c('sellers','buyers','date','tokenamt')
+
+ldecimal<- 10^18 # ldecimal to make it equal
+lsupply<- 1374955752
+ltt<-ldecimal*lsupply
+#find the number of transaction <= decimal * supply
+ldata1<-subset(ltempff,tokenamt<=ltt)
+ldata1$date <-as.Date(as.POSIXct(as.numeric(ldata1$date), origin="1970-01-01"))
+
+summary(ldata1)
+#substitute / with - for a corrected date format
+ltoken_price$date<-gsub("/","-",ltoken_price$date)
+#format the date in mm-dd-yyyy in token price
+ltoken_price$date<-format(as.Date(ltoken_price$date, format="%m-%d-%Y"), "%Y-%m-%d")
+#format the date in mm-dd-yyyy in token graph
+ldata1$date<-format(as.Date(ldata1$date, format="%Y-%m-%d"), "%Y-%m-%d")
+lactive_buyers_table<-as.data.frame(ldata1)
+#get a maximum token amount per day
+ltrans_max <- aggregate(tokenamt ~ date, ldata1, max)
+ltemp_data<-merge(ltrans_max,lactive_buyers_table)
+ltempdata<-unique(ltemp_data)
+ltop<-as.data.frame(ltoken_price)
+ltop$volume<-gsub(",", "", ltop$volume, fixed = TRUE) 
+#merging token price table with active buyers table by date
+ltp<-merge(ltop,lactive_buyers_table,by="date")
+lt_p<-as.data.frame(table(ltp$buyers))
+#grouping the merged table by date
+ltp<-ltp%>%group_by(date)
+summary(ltp)
+#Sorting the volume in descending order to get top amount of volume to find the most active buyers
+lorder_by_volume<-ltp[order(as.numeric(as.character(ltp$volume)), decreasing=TRUE) , ]
+#Remove the duplicated volume
+lunique_order_by_vol<-subset(lorder_by_volume,!duplicated(lorder_by_volume$volume))
+#Find the correlation of the whole data to find the best relationship between volume & close
+loopring_cor_val_whole_close<-cor(as.numeric(as.character(lunique_order_by_vol$volume)),lunique_order_by_vol$close)
+loopring_cor_val_whole_close
+#Find the correlation of the whole data to find the best relationship between volume & open
+loopring_cor_val_whole_open<-cor(as.numeric(as.character(lunique_order_by_vol$volume)),lunique_order_by_vol$open)
+loopring_cor_val_whole_open
+#getting the top 50 most active buyers
+ltop_unique_vol<-lunique_order_by_vol[1:10,]
+################Tracking most active buyers & sellers in other tokens#####
+###tracking most active buyers sellers of funfair in other 2 tokens###
+library(data.table)
+setDT(kyber_unique_order_by_vol)
+setDT(top_unique_vol)
+trackfunfair_kyber<-kyber_unique_order_by_vol[, present:= FALSE][top_unique_vol, present:= TRUE, on = .(buyers)]
+
+trackfunfair_kyber
+#we can see that only 22 users from the top 50 users of funfair token are present in the  kybernetwork token 
+table(trackfunfair_kyber$present)
+
+#Displaying the kybernetwork that contains the top 50 users from funfair
+common_buyers_fun_kyber<-subset(kyber_unique_order_by_vol,kyber_unique_order_by_vol$buyers %in% top_unique_vol$buyers)
+
+common_buyers_fun_kyber
+
+summary(common_buyers_fun_kyber)
+
+setDT(lunique_order_by_vol)
+setDT(top_unique_vol)
+trackfunfair_loopring<-lunique_order_by_vol[, present := FALSE][top_unique_vol, present := TRUE, on = .(buyers)]
+
+trackfunfair_loopring
+
+#we can see that only 15 users from the top 50 users of funfair token are present in the loopring token 
+
+table(trackfunfair_loopring$present)
+
+#Displaying the loopring that contains the top 50 users from funfair
+common_buyers_fun_loop<-subset(lunique_order_by_vol,lunique_order_by_vol$buyers %in% top_unique_vol$buyers)
+
+common_buyers_fun_loop
+summary(common_buyers_fun_loop)
+
+##now lets track most active buyers sellers of kyber network in other 2 tokens##
+
+setDT(kyber_top_unique_vol)
+setDT(unique_order_by_vol)
+trackkyber_funfair<-unique_order_by_vol[, present:= FALSE][kyber_top_unique_vol, present:= TRUE, on = .(buyers)]
+
+trackkyber_funfair
+
+#we can see that only 10 users from the top 200 users of kyber token are present in the  funfair token 
+table(trackkyber_funfair$present)
+
+#Displaying the funfair that contains the top 200 users from kybermetwork
+common_buyers_kyber_fun<-subset(unique_order_by_vol,unique_order_by_vol$buyers %in% kyber_top_unique_vol$buyers)
+
+common_buyers_kyber_fun
+
+summary(common_buyers_kyber_fun)
+
+
+
+setDT(lunique_order_by_vol)
+setDT(kyber_top_unique_vol)
+trackkyber_loopring<-lunique_order_by_vol[, present := FALSE][kyber_top_unique_vol, present := TRUE, on = .(buyers)]
+
+trackkyber_loopring
+
+#we can see that only 50 users from the top 200 users of kyber token are present in the loopring token 
+
+table(trackkyber_loopring$present)
+
+#Displaying the loopring that contains the top 200 users from kybernetwork
+common_buyers_kyber_loop<-subset(lunique_order_by_vol,lunique_order_by_vol$buyers %in% kyber_top_unique_vol$buyers)
+
+common_buyers_kyber_loop
+
+summary(common_buyers_kyber_loop)
+
+##now lets track most active buyers sellers of loopring network in other 2 tokens##
+
+setDT(ltop_unique_vol)
+setDT(unique_order_by_vol)
+trackloop_funfair<-unique_order_by_vol[, present:= FALSE][ltop_unique_vol, present:= TRUE, on = .(buyers)]
+
+trackloop_funfair
+
+#we can see that only 10 users from the top 50 users of loopring token are present in the funfair token 
+table(trackloop_funfair$present)
+
+#Displaying the funfair that contains the top 10 users from loopring
+common_buyers_loop_fun<-subset(unique_order_by_vol,unique_order_by_vol$buyers %in% ltop_unique_vol$buyers)
+
+common_buyers_loop_fun
+
+summary(common_buyers_loop_fun)
+
+setDT(ltop_unique_vol)
+setDT(kyber_unique_order_by_vol)
+trackloop_kyber<-kyber_unique_order_by_vol[, present := FALSE][ltop_unique_vol, present := TRUE, on = .(buyers)]
+
+trackloop_kyber
+
+#we can see that only 27 users from the top 50 users of loopring token are present in the kybernetwork token 
+table(trackloop_kyber$present)
+
+#Displaying the kybernetwork that contains the top 10 users from loopring
+common_buyers_loop_kyb<-subset(kyber_unique_order_by_vol,kyber_unique_order_by_vol$buyers %in% ltop_unique_vol$buyers)
+
+common_buyers_loop_kyb
+
+summary(common_buyers_loop_kyb)
+
+
+######## Regression model for funfair###################################
+#find the correlation of volume & close for top k buyers
+cor_val_close<-cor(as.numeric(as.character(top_unique_vol$volume)),top_unique_vol$close)
+cor_val_close
+#find the correlation of volume & open for top k buyers
+cor_val_open<-cor(as.numeric(as.character(top_unique_vol$volume)),top_unique_vol$open)
+cor_val_open
+
+#correlation is more in close compared to open with volume
+#So taking outcome price as close
+Outcome_price_close<-top_unique_vol$close
+#taking the most active buyers based on the amount of buy(i.e, volume) as regressors
+Regressors_Amount_of_buy<-as.numeric(as.character(top_unique_vol$volume))
+#find the linear regression between regressors & close as outcome price
+model_close <- lm(Outcome_price_close~Regressors_Amount_of_buy,data=top_unique_vol)
+summary(model_close)
+#After the top 80, we saw that, the R-Square value is decreasing and got a better correlation for 80 buyers
+#plot for regressors & close as outcome price
+plot(model_close)
+#######################Regression model for kybernetwork##############
+#find the correlation of volume & close for top k buyers
+kyber_cor_val_close<-cor(as.numeric(as.character(kyber_top_unique_vol$volume)),kyber_top_unique_vol$close)
+kyber_cor_val_close
+#find the correlation of volume & open for top k buyers
+kyber_cor_val_open<-cor(as.numeric(as.character(kyber_top_unique_vol$volume)),kyber_top_unique_vol$open)
+kyber_cor_val_open
+#correlation is more in close compared to open with volume
+#So taking outcome price as close
+kyber_Outcome_price_close<-kyber_unique_order_by_vol$close
+#taking the most active buyers based on the amount of buy(i.e, volume) as regressors
+Kyber_Regressors_Amount_of_buy<-as.numeric(as.character(kyber_unique_order_by_vol$volume))
+#find the linear regression between regressors & close as outcome price
+kyber_model_close <- lm(kyber_Outcome_price_close~Kyber_Regressors_Amount_of_buy,data=kyber_top_unique_vol)
+summary(kyber_model_close)
+#After taking the lowest to 225 buyers, we saw that, the R-Square value is constant and got a better correlation for 200 buyers
+#plot for regressors & close as outcome price
+plot(kyber_model_close)
+#####################Regression model for loopring######################
+
+#find the correlation of volume & close for top k buyers
+lcor_val_close<-cor(as.numeric(as.character(ltop_unique_vol$volume)),ltop_unique_vol$close)
+lcor_val_close
+#find the correlation of volume & open for top k buyers
+lcor_val_open<-cor(as.numeric(as.character(ltop_unique_vol$volume)),ltop_unique_vol$open)
+lcor_val_open
+#correlation is more in close compared to open with volume
+#So taking outcome price as close
+lOutcome_price_close<-lunique_order_by_vol$close
+#taking the most active buyers based on the amount of buy(i.e, volume) as regressors
+lRegressors_Amount_of_buy<-as.numeric(as.character(lunique_order_by_vol$volume))
+#find the linear regression between regressors & close as outcome price
+lmodel <- lm(lOutcome_price_close~lRegressors_Amount_of_buy,data=lunique_order_by_vol)
+summary(lmodel)
+#After taking 10 buyers, we saw that,getting not good values for R Square and other attributes and got a better correlation for 10 buyers
+#plot for regressors & close as outcome price
+plot(lmodel)
+
+###############Conclusion##############################
+#Summary of funfair
+summary(model_close)
+
+#Summary of Kybernetwork
+summary(kyber_model_close)
+
+#Summary of loopring
+summary(lmodel)
+
+
+#After analysing the 3 of the tokens we have come to a conclusion that,every token has it's own behavior but we analysed that both funfair & loopring responded well to the linear regression model but when it came to kybernetwork, we observed that, even after taking the all the buyers, Regression showed no changes like the R-Square value did not change.
+
+```
